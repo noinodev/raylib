@@ -370,10 +370,10 @@ typedef enum bool { false = 0, true = !false } bool;
 #if !defined(RL_MATRIX_TYPE)
 // Matrix, 4x4 components, column major, OpenGL style, right handed
 typedef struct Matrix {
-    float m0, m4, m8, m12;      // Matrix first row (4 components)
-    float m1, m5, m9, m13;      // Matrix second row (4 components)
-    float m2, m6, m10, m14;     // Matrix third row (4 components)
-    float m3, m7, m11, m15;     // Matrix fourth row (4 components)
+    float m0, m1, m2, m3;      // Matrix first row (4 components)
+    float m4, m5, m6, m7;      // Matrix second row (4 components)
+    float m8, m9, m10, m11;     // Matrix third row (4 components)
+    float m12, m13, m14, m15;     // Matrix fourth row (4 components)
 } Matrix;
 #define RL_MATRIX_TYPE
 #endif
@@ -1270,12 +1270,11 @@ void rlLoadIdentity(void)
 // Multiply the current matrix by a translation matrix
 void rlTranslatef(float x, float y, float z)
 {
-    Matrix matTranslation = {
-        1.0f, 0.0f, 0.0f, x,
-        0.0f, 1.0f, 0.0f, y,
-        0.0f, 0.0f, 1.0f, z,
-        0.0f, 0.0f, 0.0f, 1.0f
-    };
+    // Initializer relies on Matrix type memory order, when it shouldn't
+    Matrix matTranslation = rlMatrixIdentity();
+    matTranslation.m12 = x;
+    matTranslation.m13 = y;
+    matTranslation.m14 = z;
 
     // NOTE: We transpose matrix with multiplication order
     *RLGL.State.currentMatrix = rlMatrixMultiply(matTranslation, *RLGL.State.currentMatrix);
@@ -1329,6 +1328,7 @@ void rlRotatef(float angle, float x, float y, float z)
 // Multiply the current matrix by a scaling matrix
 void rlScalef(float x, float y, float z)
 {
+    // Safe transposable initializer
     Matrix matScale = {
         x, 0.0f, 0.0f, 0.0f,
         0.0f, y, 0.0f, 0.0f,
@@ -1344,10 +1344,24 @@ void rlScalef(float x, float y, float z)
 void rlMultMatrixf(const float *matf)
 {
     // Matrix creation from array
-    Matrix mat = { matf[0], matf[4], matf[8], matf[12],
-                   matf[1], matf[5], matf[9], matf[13],
-                   matf[2], matf[6], matf[10], matf[14],
-                   matf[3], matf[7], matf[11], matf[15] };
+    // Cast and dereference for new Matrix layout
+    Matrix mat = { 0 };
+    mat.m0 = matf[0];
+    mat.m1 = matf[1];
+    mat.m2 = matf[2];
+    mat.m3 = matf[3];
+    mat.m4 = matf[4];
+    mat.m5 = matf[5];
+    mat.m6 = matf[6];
+    mat.m7 = matf[7];
+    mat.m8 = matf[8];
+    mat.m9 = matf[9];
+    mat.m10 = matf[10];
+    mat.m11 = matf[11];
+    mat.m12 = matf[12];
+    mat.m13 = matf[13];
+    mat.m14 = matf[14];
+    mat.m15 = matf[15];
 
     *RLGL.State.currentMatrix = rlMatrixMultiply(mat, *RLGL.State.currentMatrix);
 }
@@ -4463,13 +4477,7 @@ void rlSetVertexAttributeDefault(int locIndex, const void *value, int attribType
 void rlSetUniformMatrix(int locIndex, Matrix mat)
 {
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
-    float matfloat[16] = {
-        mat.m0, mat.m1, mat.m2, mat.m3,
-        mat.m4, mat.m5, mat.m6, mat.m7,
-        mat.m8, mat.m9, mat.m10, mat.m11,
-        mat.m12, mat.m13, mat.m14, mat.m15
-    };
-    glUniformMatrix4fv(locIndex, 1, false, matfloat);
+    glUniformMatrix4fv(locIndex, 1, false, (float*)&mat);
 #endif
 }
 
@@ -4477,7 +4485,7 @@ void rlSetUniformMatrix(int locIndex, Matrix mat)
 void rlSetUniformMatrices(int locIndex, const Matrix *matrices, int count)
 {
 #if defined(GRAPHICS_API_OPENGL_33)
-    glUniformMatrix4fv(locIndex, count, true, (const float *)matrices);
+    glUniformMatrix4fv(locIndex, count, false, (const float *)matrices);
 #elif defined(GRAPHICS_API_OPENGL_ES2)
     // WARNING: WebGL does not support Matrix transpose ("true" parameter)
     // REF: https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/uniformMatrix
