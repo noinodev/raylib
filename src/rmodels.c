@@ -1694,8 +1694,7 @@ void DrawMeshInstanced(Mesh mesh, Material material, const Matrix *transforms, i
 {
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
     // Instancing required variables
-    float16 *instanceTransforms = NULL;
-    unsigned int instancesVboId = 0;
+    static unsigned int instancesVboId = 0;
 
     // Bind shader program
     rlEnableShader(material.shader.id);
@@ -1742,12 +1741,6 @@ void DrawMeshInstanced(Mesh mesh, Material material, const Matrix *transforms, i
     if (material.shader.locs[SHADER_LOC_MATRIX_VIEW] != -1) rlSetUniformMatrix(material.shader.locs[SHADER_LOC_MATRIX_VIEW], matView);
     if (material.shader.locs[SHADER_LOC_MATRIX_PROJECTION] != -1) rlSetUniformMatrix(material.shader.locs[SHADER_LOC_MATRIX_PROJECTION], matProjection);
 
-    // Create instances buffer
-    instanceTransforms = (float16 *)RL_MALLOC(instances*sizeof(float16));
-
-    // Fill buffer with instances transformations as float16 arrays
-    for (int i = 0; i < instances; i++) instanceTransforms[i] = MatrixToFloatV(transforms[i]);
-
     // Enable mesh VAO to attach new buffer
     rlEnableVertexArray(mesh.vaoId);
 
@@ -1755,7 +1748,12 @@ void DrawMeshInstanced(Mesh mesh, Material material, const Matrix *transforms, i
     // It isn't clear which would be reliably faster in all cases and on all platforms,
     // anecdotally glMapBuffer() seems very slow (syncs) while glBufferSubData() seems
     // no faster, since we're transferring all the transform matrices anyway
-    instancesVboId = rlLoadVertexBuffer(instanceTransforms, instances*sizeof(float16), false);
+
+    // The API may benefit from a persistent VBO for matrix transforms
+
+    // Memory layout for float16 and Matrix types is identical
+    // Remove malloc() and copy in hot path, replaced with zero-copy pointer cast
+    instancesVboId = rlLoadVertexBuffer(transforms, instances*sizeof(float16), false);
 
     // Instances transformation matrices are sent to shader attribute location: SHADER_LOC_VERTEX_INSTANCE_TX
     if (material.shader.locs[SHADER_LOC_VERTEX_INSTANCE_TX] != -1)
@@ -1933,7 +1931,6 @@ void DrawMeshInstanced(Mesh mesh, Material material, const Matrix *transforms, i
 
     // Remove instance transforms buffer
     rlUnloadVertexBuffer(instancesVboId);
-    RL_FREE(instanceTransforms);
 #endif
 }
 
